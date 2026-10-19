@@ -1,0 +1,4 @@
+window.CUADERNO_CONFIG = {
+  supabaseUrl: 'https://sjeqrlsctybwzcwrlkds.supabase.co',
+  supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNqZXFybHNjdHlid3pjd3Jsa2RzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI0MDA1NzUsImV4cCI6MjEwNzk3NjU3NX0.A1YlsSskd8aLhT5YH2UrJPgeJzFN-VE7xFB_l9UfmY0'
+};
