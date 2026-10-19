@@ -224,6 +224,12 @@ textarea{min-height:70px;resize:vertical}
 .mcard svg{margin-top:4px;max-height:56px}
 .pr{margin-left:8px;font-family:var(--f-mono);font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border-radius:99px;background:var(--ok);color:#fff;vertical-align:2px}
 ul.read{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:15px}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.steps li{display:grid;grid-template-columns:74px 1fr;gap:10px;padding:10px 12px;border:1px solid var(--line);border-left:4px solid var(--c,var(--accent));border-radius:var(--r);background:var(--surface)}
+.steps .at{font-family:var(--f-mono);font-size:11px;color:var(--muted);padding-top:2px}
+.steps .am{color:var(--muted)} .steps .pc{font-weight:600;color:var(--c,var(--accent));font-size:14px;margin-top:2px}
+.steps .nt{font-size:13.5px;color:var(--muted);margin-top:3px}
+.steps li.t-E{--c:var(--tE)}.steps li.t-T{--c:var(--tT)}.steps li.t-M{--c:var(--tM)}.steps li.t-H{--c:var(--tH)}.steps li.t-R{--c:var(--tR)}.steps li.t-W{--c:var(--tG)}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
 @media (max-width:460px){
   .bib .num{font-size:52px}
@@ -908,6 +914,121 @@ function viewResumen() {
   <div class="row"><button class="btn" data-sum-copy>Copiar resumen</button><span class="muted" style="font-size:13px">Pégalo en un chat con tu entrenador o con Claude para ajustar el plan.</span></div>`;
 }
 
+/* ---------- Guion paso a paso de las sesiones de carrera ---------- */
+function runSteps(s, pc) {
+  const mid = r => (r[0] + r[1]) / 2, mE = mid(pc.E);
+  const eR = `E ${fPace(pc.E[0])}–${fPace(pc.E[1])}/km`;
+  const tMid = pc.T ? mid(pc.T) : mE - 80, mMid = pc.M ? mid(pc.M) : mE - 40;
+  const tR = pc.T ? `T ${fPace(pc.T[0])}–${fPace(pc.T[1])}/km · RPE 6–7` : 'RPE 6–7 (frases cortas), sin reloj fijo todavía';
+  const mR = `M ${fPace(pc.M[0])}–${fPace(pc.M[1])}/km · RPE 4–5`;
+  const r5k = k => Math.max(0, Math.round(k * 2) / 2);
+  const kmMin = k => k * mE / 60;
+  const st = []; let cum = 0;
+  const add = (k, title, dur, amount, pace, note) => { st.push({k, title, from: Math.round(cum), to: Math.round(cum + dur), amount, pace, note: note || ''}); cum += dur; };
+  const E_ = (title, km, note, pace) => add('E', title, kmMin(km), `${num(km)} km`, pace || `${eR} · RPE 2–3`, note);
+  const main = s.main || '', t = s.title || '';
+  // Carrera-caminata (semanas 1–4)
+  if (s.min) {
+    const rw = main.match(/(\d+)\s*×\s*\((\d+)′ correr \+ (\d+)′ andar\)/), cont = main.match(/(\d+)′ de carrera fácil continua/), walkEnd = /y 10′ andando/.test(main);
+    add('W', 'Antes de empezar', 4, '3–5′ andando', 'paso vivo', 'Movilidad de tobillo y cadera (1–2′). Empieza con las piernas calientes.');
+    if (rw) { const n = +rw[1], a = +rw[2], b = +rw[3]; add('E', `${n} × (${a}′ corriendo + ${b}′ andando)`, n * (a + b), `${n * a}′ corriendo · ${n * b}′ andando`, 'ritmo libre, RPE 2 · ve más lento que ' + eR, `Pon el cronómetro por intervalos: ${a}′ / ${b}′ × ${n}. Al andar, paso rápido, sin parar del todo. Si el tobillo duele, acorta el tramo de correr.`); }
+    if (cont) add('E', `${cont[1]}′ de carrera continua`, +cont[1], `${cont[1]}′ seguidos`, 'ritmo libre, RPE 2 · mejor lento que rápido', 'Si te falta el aire para hablar, camina 1′ y vuelve a empezar. Anota cuánto de verdad corriste.');
+    if (walkEnd) add('W', 'Vuelta a la calma', 10, '10′ andando', 'paso tranquilo', 'No pares en seco. Termina con 2–3′ de estiramiento suave de gemelo.');
+    return st;
+  }
+  // Carreras con pauta propia
+  if (t.startsWith('Marató')) {
+    add('E', 'Calentamiento', 12, '2 km muy suaves + 2–3 progresivos de 15″', eR, 'Sin forzar; guarda piernas.');
+    add('E', 'Km 1–5', kmMin(5) * 0.97, '5 km', `5–10 s/km más lento que M (${fPace(mMid + 5)}–${fPace(mMid + 10)}/km)`, 'Se te hará lento. Es a propósito.');
+    add('M', 'Km 5–30', 25 * mMid / 60, '25 km', mR, 'Constante. Bebe y toma gel según tu plan ya validado.');
+    add('H', 'Km 30–42,2', 12.2 * mMid / 60, '12,2 km', 'decides tú por sensaciones', 'Si vas bien, aprieta poco a poco. Si no, mantén M y llega.');
+    return st;
+  }
+  if (t.startsWith('Cursa Bombers')) {
+    add('E', 'Calentamiento', kmMin(2), '2 km E + 3 progresivos de 15″', eR, 'Termina 10–15′ antes de la salida.');
+    add('T', 'Km 1–3', 3 * (mE - 60) / 60, '3 km', 'RPE 6', 'Salida controlada: es donde todos se pasan.');
+    add('T', 'Km 4–8', 5 * (mE - 80) / 60, '5 km', 'RPE 7', 'Respiración fuerte pero sostenida.');
+    add('R', 'Km 9–10', 2 * (mE - 100) / 60, '2 km', 'RPE 8–9 solo si vas estable', 'Si dudas, mantén RPE 7. Anota el tiempo oficial.');
+    return st;
+  }
+  if (t.startsWith('San Silvestre')) { E_('Todo el recorrido', 8, 'Con gente, hablando. No compitas; es un rodaje con ambiente.'); return st; }
+  if (t.startsWith('Control fácil')) {
+    E_('Primeros 10′', 1.4, 'Entra en calor al ritmo E, a tu ritmo.');
+    add('E', '20′ centrales (control)', 20, `${num(20 * 60 / mE)} km aprox.`, `${eR} · constante`, 'Recorrido llano conocido. Anota ritmo medio y FC de estos 20′ para compararlo con la semana 12.');
+    E_('Resto', s.km - 1.4 - 20 * 60 / mE, 'Vuelta a la calma, mismo ritmo o un poco más lento.');
+    return st;
+  }
+  if (t.startsWith('Activación')) {
+    E_('Rodaje E', 3, 'Desde el principio, a ritmo cómodo.');
+    add('H', '3 × 15″ progresivos', 3, 'repartidos en el último km', 'RPE 5, sin sprint', 'Acelera suave 15″ y vuelve a E con 1′ de trote entre ellos.');
+    return st;
+  }
+  const km = s.km || 0;
+  const warmKm = s.type === 'M' ? 3 : 2, warmNote = {T:'Antes, 3–5′ de movilidad dinámica. Termina el calentamiento con 3 × 15″ progresivos suaves.', M:'Antes, 3–5′ de movilidad dinámica.', H:'Antes, 3–5′ de movilidad dinámica. Acaba con 3 progresivos de 15–20″ (RPE 5).'}[s.type] || '';
+  // Series por bloques (T, M, fartlek)
+  const mb = main.match(/(\d+)\s*×\s*(\d+)′\s*a\s*(T|M|RPE 6)\s*con\s*(\d+)′\s*E/);
+  if (mb && !/^30′ E/.test(main)) {
+    const n = +mb[1], d = +mb[2], rec = +mb[4], kind = mb[3], pS = kind === 'T' ? tMid : kind === 'M' ? mMid : mE - 60;
+    const blockKm = n * d * 60 / pS + (n - 1) * rec * 60 / mE, cool = r5k(km - warmKm - blockKm);
+    E_('Calentamiento', warmKm, warmNote);
+    add(kind === 'RPE 6' ? 'H' : kind, `${n} bloques de ${d}′`, n * d + (n - 1) * rec, `${n} × ${d}′ con ${rec}′ de trote E entre ellos`, kind === 'T' ? tR : kind === 'M' ? mR : 'RPE 6 · vivo pero controlado, sin sprint', `Empieza al acabar el calentamiento (hacia el km ${num(warmKm)}). Cada bloque: ${d}′ a ritmo; los ${rec}′ de entre bloques, trote muy suave. El último bloque no debe ir más rápido que el primero.`);
+    if (cool > 0) E_('Vuelta a la calma', cool, 'Último km muy suave.');
+    return st;
+  }
+  // Cuestas cortas
+  const hm = main.match(/(\d+)\s*×\s*(\d+)″\s*en cuesta/);
+  if (hm) {
+    const n = +hm[1], d = +hm[2], blockMin = n * (d + 90) / 60, cool = r5k(km - warmKm - blockMin * 60 / mE);
+    E_('Calentamiento', warmKm, warmNote);
+    add('H', `${n} cuestas de ${d}″`, blockMin, `${n} × ${d}″ en cuesta (4–6 %, 100–150 m)`, 'RPE 7 · rápido y con técnica, nunca sprint', `Sube con zancada corta y brazos activos. Baja ANDANDO hasta recuperar del todo (≈1′30″) antes de la siguiente. Empieza al acabar el calentamiento, en la cuesta.`);
+    if (cool > 0) E_('Vuelta a la calma', cool, 'Rodaje E hasta completar los km.');
+    return st;
+  }
+  // Tirada con bloques M (S21)
+  const tb = main.match(/^(\d+)′ E, después (\d+) × (\d+)′ a M con (\d+)′ E/);
+  if (tb) {
+    const first = +tb[1], n = +tb[2], d = +tb[3], rec = +tb[4], mk = n * d * 60 / mMid + (n - 1) * rec * 60 / mE, rest = r5k(km - first * 60 / mE - mk - 2);
+    add('E', 'Inicio fácil', first, `${first}′ E`, `${eR} · RPE 2–3`, 'Sin prisa. Bebe a sorbos desde el primer cuarto de hora.');
+    add('M', `${n} bloques de ${d}′ a ritmo M`, n * d + (n - 1) * rec, `${n} × ${d}′ con ${rec}′ E entre ellos`, mR, 'Es el ensayo del día de carrera: mismo calzado, mismo gel, mismo ritmo de toma.');
+    if (rest > 0) E_('Rodaje E hasta los últimos 2 km', rest, 'Reparte los km que faltan a ritmo E.');
+    E_('Últimos 2 km', 2, 'Muy suaves. Termina andando 5′.');
+    return st;
+  }
+  // Tirada con M continuo (S22)
+  if (/seguidos a M en la parte central/.test(main)) {
+    const mm = 52, mk = mm * 60 / mMid, side = r5k((km - mk) / 2);
+    E_('Inicio fácil', side, 'Entra en calor con calma.');
+    add('M', '45–60′ seguidos a M', mm, `≈ ${num(mk)} km`, mR, 'Sin pausas. Ritmo estable; si pasas de 60′, para.');
+    E_('Vuelta fácil', km - side - mk, 'Rodaje E hasta completar.');
+    return st;
+  }
+  // Tirada larga de 27 km y tiradas largas en general
+  if (s.dow === 6 && km >= 15) {
+    add('E', 'Primeros 3 km', kmMin(3) * 1.04, '3 km', `extremo lento de ${eR}`, 'Empieza más lento de lo que te apetece. Aquí se gana la tirada.');
+    add('E', `Km 3–${num(km)}`, kmMin(km - 3), `${num(km - 3)} km`, `${eR} · RPE 2–3`, `Constante, sin acelerar al final. ${km >= 22 ? 'Para a las 3 h aunque falten kilómetros. ' : ''}Bebe cada 15–20′ y toma gel según tu plan.`);
+    return st;
+  }
+  // Rodajes fáciles con progresivos (P)
+  const pm = main.match(/con 4–6 progresivos de 20″/);
+  if (pm) {
+    const half = r5k(km / 2);
+    E_('Primera mitad', half, 'Todo a ritmo E, sin pensar en el reloj.');
+    add('H', '4–6 progresivos de 20″', 8, 'repartidos en la segunda mitad', 'acelera suave hasta RPE 5; no sprint', 'Cada 4–5′: 20″ de aceleración progresiva y vuelves a E con 1′ de trote. Son para soltar la zancada.');
+    E_('Resto', km - half - (8 * 60 / mE), 'Vuelta a E. Si el tobillo molesta, quita los progresivos.');
+    return st;
+  }
+  // Rodaje / tirada fácil
+  E_('Todo el recorrido', km, 'Constante. Si no puedes hablar con frases completas, baja el ritmo. Mejor lento que rápido.');
+  return st;
+}
+function stepsHTML(s, pc) {
+  if (s.kind !== 'run') return '';
+  const st = runSteps(s, pc); if (!st.length) return '';
+  const tot = st.length ? st[st.length - 1].to : 0;
+  return `<div class="stack" style="gap:8px"><div class="row between"><b>Cómo hacerla</b><span class="mono muted">≈ ${tot}′ en total</span></div>
+    <ol class="steps">${st.map(x => `<li class="t-${x.k}"><span class="at">min ${x.from}–${x.to}</span><div><b>${esc(x.title)}</b><span class="am"> · ${esc(x.amount)}</span><div class="pc">${esc(x.pace)}</div>${x.note ? `<div class="nt">${esc(x.note)}</div>` : ''}</div></li>`).join('')}</ol></div>`;
+}
+
 /* ---------- Componentes ---------- */
 const chip = t => `<span class="chip t-${t}">${t === 'G' ? 'GYM' : t}</span>`;
 const sessChip = s => s.kind === 'gym' ? `<span class="chip t-G">${s.code}</span>` : chip(s.type);
@@ -1002,7 +1123,8 @@ function sessionCard(s, pc, kicker) {
       <div class="row" style="align-items:baseline;gap:18px">${s.km ? `<span class="big">${num(s.km)}<small>km</small></span>` : `<span class="big">${s.min}<small>min</small></span>`}<span class="muted">≈ ${fDur(durEst(s, pc))}</span></div>
       <div>${esc(s.main)}</div>
       ${tl ? `<div class="target t-${s.type}">${esc(tl)}</div>` : ''}
-      <dl class="spec">${s.warm ? `<dt>Calentar</dt><dd>${esc(s.warm)}</dd>` : ''}${s.cool ? `<dt>Final</dt><dd>${esc(s.cool)}</dd>` : ''}<dt>Sensación</dt><dd>${esc(s.intensity)}</dd>${s.fuel ? `<dt>Nutrición</dt><dd>${esc(s.fuel)}</dd>` : ''}</dl>`
+      ${stepsHTML(s, pc)}
+      <dl class="spec"><dt>Sensación</dt><dd>${esc(s.intensity)}</dd>${s.fuel ? `<dt>Nutrición</dt><dd>${esc(s.fuel)}</dd>` : ''}</dl>`
     : `
       <div class="row" style="align-items:baseline;gap:18px"><span class="big">${s.items.length}<small>ejercicios</small></span><span class="muted">≈ ${s.estMin}′ · ${esc(s.dose)}</span></div>
       <div class="muted" style="font-size:14px">${esc(s.note)}</div>
@@ -1149,7 +1271,8 @@ function renderSheet() {
   const detail = s.kind === 'run' ? `
     <div>${esc(s.main)}</div>
     ${targetLine(s, pc) ? `<div class="target t-${s.type}">${esc(targetLine(s, pc))}</div>` : ''}
-    <dl class="spec">${s.warm ? `<dt>Calentar</dt><dd>${esc(s.warm)}</dd>` : ''}${s.cool ? `<dt>Final</dt><dd>${esc(s.cool)}</dd>` : ''}<dt>Sensación</dt><dd>${esc(s.intensity)}</dd>${s.fuel ? `<dt>Nutrición</dt><dd>${esc(s.fuel)}</dd>` : ''}</dl>` : `<div class="muted" style="font-size:14px">${esc(s.note)}</div>`;
+    ${stepsHTML(s, pc)}
+    <dl class="spec"><dt>Sensación</dt><dd>${esc(s.intensity)}</dd>${s.fuel ? `<dt>Nutrición</dt><dd>${esc(s.fuel)}</dd>` : ''}</dl>` : `<div class="muted" style="font-size:14px">${esc(s.note)}</div>`;
   const runF = s.kind === 'run' ? `<fieldset><legend>Carrera</legend><div class="fields">
       ${numF('f-km', 'Km', l.actualKm)}${numF('f-min', 'Minutos totales', l.actualMin)}${numF('f-run', 'Min corriendo', l.actualRunMin)}${numF('f-walk', 'Min andando', l.actualWalkMin)}
       ${fld('f-pace', 'Ritmo medio (m:ss)', l.avgPace, 'placeholder="6:45" inputmode="numeric"')}${numF('f-hr', 'FC media', l.hr, '1')}
