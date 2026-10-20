@@ -1239,7 +1239,7 @@ function viewAjustes() {
     </dl>
     <div class="muted" style="font-size:13px">E usa la mediana de tus últimos 6 rodajes fáciles con RPE ≤ 4 y dolor ≤ 2. El RPE manda sobre el reloj.</div>
     <form class="fields" id="paceForm">
-      <label class="f">Tiempo de 10K (mm:ss)<input id="p-10k" placeholder="p. ej. 52:30" value="${esc(S.settings.tenK || '')}"></label>
+      <label class="f">Tiempo de 10K (mm:ss)<input id="p-10k" class="tm" inputmode="decimal" autocomplete="off" placeholder="p. ej. 52:30" value="${esc(S.settings.tenK || '')}"></label>
       <label class="f">Fijar E a mano (m:ss–m:ss)<input id="p-e" placeholder="vacío = automático" value="${esc(S.settings.ePace || '')}"></label>
       <button class="btn" type="submit" style="align-self:end">Guardar ritmos</button>
     </form>
@@ -1263,8 +1263,16 @@ function openSheet(key) { S.open = key; S.confirmDel = false; renderSheet(); $('
 function closeSheet() { S.open = null; $('#sheet').hidden = true; document.body.style.overflow = ''; }
 function fld(id, label, val, attrs = '') { return `<label class="f">${label}<input id="${id}" value="${esc(val ?? '')}" ${attrs}></label>`; }
 const fmtMin = m => { if (m == null || m === '' || isNaN(m)) return ''; const t = Math.round(+m * 60); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
-const parseMin = x => { x = String(x).trim().replace(',', '.'); if (!x) return null; const m = x.match(/^(\d+):([0-5]?\d)(?::([0-5]?\d))?$/); if (m) return m[3] != null ? (+m[1] * 60 + +m[2]) + +m[3] / 60 : +m[1] + +m[2] / 60; const n = Number(x); return isNaN(n) ? NaN : n; };
-const minF = (id, label, val, ph = '31:50', suf = ' (mm:ss)') => fld(id, label + suf, fmtMin(val), `placeholder="${ph}" autocomplete="off" autocapitalize="off" spellcheck="false"`);
+const normTime = x => {
+  x = String(x ?? '').trim(); if (!x) return '';
+  x = x.replace(/[.,'’′″;\s]+/g, ':').replace(/:+/g, ':').replace(/^:|:$/g, '');
+  if (/^\d+$/.test(x)) x = x.length <= 2 ? x + ':00' : x.length <= 4 ? x.slice(0, -2) + ':' + x.slice(-2) : x.slice(0, -4) + ':' + x.slice(-4, -2) + ':' + x.slice(-2);
+  const m = x.match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/); if (!m) return null;
+  if (m[3] != null) { if (+m[2] > 59 || +m[3] > 59) return null; return `${+m[1]}:${m[2].padStart(2, '0')}:${m[3].padStart(2, '0')}`; }
+  if (+m[2] > 59) return null; return `${+m[1]}:${m[2].padStart(2, '0')}`;
+};
+const parseMin = x => { const t = normTime(x); if (t === '') return null; if (t == null) return NaN; const p = t.split(':').map(Number); return p.length === 3 ? p[0] * 60 + p[1] + p[2] / 60 : p[0] + p[1] / 60; };
+const minF = (id, label, val, ph = '31:50', suf = ' (mm:ss)') => fld(id, label + suf, fmtMin(val), `class="tm" placeholder="${ph}" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"`);
 const fmtNum = v => v == null || v === '' || isNaN(v) ? '' : String(Math.round(+v * 100) / 100).replace('.', ',');
 const parseNum = x => { x = String(x ?? '').trim().replace(/\s/g, '').replace(',', '.'); if (!x) return null; if (!/^-?\d+(\.\d+)?$/.test(x)) return NaN; return Math.round(Number(x) * 100) / 100; };
 function numF(id, label, val) { return fld(id, label, fmtNum(val), 'inputmode="decimal" autocomplete="off"'); }
@@ -1280,8 +1288,8 @@ function renderSheet() {
     <dl class="spec"><dt>Sensación</dt><dd>${esc(s.intensity)}</dd>${s.fuel ? `<dt>Nutrición</dt><dd>${esc(s.fuel)}</dd>` : ''}</dl>` : `<div class="muted" style="font-size:14px">${esc(s.note)}</div>`;
   const runF = s.kind === 'run' ? `<fieldset><legend>Carrera</legend><div class="fields">
       ${numF('f-km', 'Km', l.actualKm)}${minF('f-min', 'Minutos totales', l.actualMin)}${minF('f-run', 'Min corriendo', l.actualRunMin)}${minF('f-walk', 'Min andando', l.actualWalkMin)}
-      ${fld('f-pace', 'Ritmo medio (m:ss)', l.avgPace, 'placeholder="6:45" autocomplete="off"')}${numF('f-hr', 'FC media', l.hr)}
-      ${s.type === 'R' ? fld('f-race', 'Tiempo oficial (mm:ss o h:mm:ss)', l.raceTime, 'placeholder="52:30" autocomplete="off"') : ''}
+      ${fld('f-pace', 'Ritmo medio (m:ss)', l.avgPace, 'class="tm" placeholder="6:45" inputmode="decimal" autocomplete="off"')}${numF('f-hr', 'FC media', l.hr)}
+      ${s.type === 'R' ? fld('f-race', 'Tiempo oficial (mm:ss o h:mm:ss)', l.raceTime, 'class="tm" placeholder="52:30" inputmode="decimal" autocomplete="off"') : ''}
     </div></fieldset>` : '';
   const gymF = s.kind === 'gym' ? `<fieldset><legend>Ejercicios</legend>
       ${s.items.map((it, i) => { const e = (l.exercises || {})[it.name] || {}, last = lastFor(it.name, s.key), sg = suggest(it, last); return `<div class="ex">
@@ -1322,7 +1330,7 @@ function readLog(s) {
   const setM = (k, id) => { const x = v(id); if (x === '') { delete l[k]; return true; } const n = parseMin(x); if (isNaN(n)) return false; l[k] = Math.round(n * 10000) / 10000; return true; };
   const setT = (k, id) => { const x = v(id); if (x === '') delete l[k]; else l[k] = x; };
   const r = document.querySelector('input[name="res"]:checked'); l.result = r ? r.value : 'success';
-  if (s.kind === 'run') { setN('actualKm','f-km'); for (const [k, id] of [['actualMin','f-min'],['actualRunMin','f-run'],['actualWalkMin','f-walk']]) if (!setM(k, id)) { toast('Escribe el tiempo como mm:ss, por ejemplo 31:50.'); return null; } setT('avgPace','f-pace'); setN('hr','f-hr'); if (s.type === 'R') setT('raceTime','f-race'); }
+  if (s.kind === 'run') { setN('actualKm','f-km'); for (const [k, id] of [['actualMin','f-min'],['actualRunMin','f-run'],['actualWalkMin','f-walk']]) if (!setM(k, id)) { toast('Escribe el tiempo como mm:ss, por ejemplo 31:50.'); return null; } { const t = normTime(v('f-pace')); if (t == null) { toast('Escribe el ritmo como m:ss, por ejemplo 6:45 (también vale 6.45).'); return null; } if (t) l.avgPace = t; else delete l.avgPace; } setN('hr','f-hr'); if (s.type === 'R') { const t = normTime(v('f-race')); if (t == null) { toast('Escribe el tiempo oficial como mm:ss o h:mm:ss.'); return null; } if (t) l.raceTime = t; else delete l.raceTime; } }
   if (s.kind === 'gym') {
     const ex = l.exercises || {};
     s.items.forEach((it, i) => {
@@ -1403,8 +1411,8 @@ document.addEventListener('submit', async e => {
     if (await writeDoc('logs/' + s.key, l)) toast(prs.length ? `Sesión guardada · ¡Récord en ${prs.slice(0, 2).map(r => r.name + ' ' + num(r.w) + ' kg').join(' y ')}!` : 'Sesión guardada');
   }
   if (e.target.id === 'paceForm') {
-    const ten = $('#p-10k').value.trim(), ep = $('#p-e').value.trim();
-    if (ten && !tSec(ten)) return toast('El 10K va como mm:ss, por ejemplo 52:30.');
+    const tenN = normTime($('#p-10k').value), ten = tenN || '', ep = $('#p-e').value.trim();
+    if (tenN == null || (ten && !tSec(ten))) return toast('El 10K va como mm:ss, por ejemplo 52:30.');
     if (ep && !/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/.test(ep)) return toast('Escribe E como 6:50-7:20, o déjalo vacío.');
     S.settings.tenK = ten; S.settings.ePace = ep; await saveSettings(); toast('Ritmos guardados');
   }
@@ -1446,6 +1454,7 @@ document.addEventListener('change', async e => {
   } catch (err) { msg.textContent = 'No se ha podido leer el archivo. Comprueba que es la copia en JSON.'; }
   e.target.value = '';
 });
+document.addEventListener('focusout', e => { const el = e.target; if (!el.classList || !el.classList.contains('tm') || !el.value.trim()) return; const t = normTime(el.value); if (t) el.value = t; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.open) closeSheet(); });
 document.addEventListener('input', e => { const m = e.target.id && e.target.id.match(/^e(\d+)r$/); if (m && e.target.value) { const c = document.getElementById('e' + m[1] + 'd'); if (c) c.checked = true; } });
 
