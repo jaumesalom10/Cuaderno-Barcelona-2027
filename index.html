@@ -280,7 +280,7 @@ const DIAL = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Doming
 const dowOf = s => (toD(s).getUTCDay() + 6) % 7;
 const fDate = s => `${+s.slice(8)} ${MES[+s.slice(5, 7) - 1]}`;
 const fDay = s => `${DIA[dowOf(s)]} ${fDate(s)}`;
-const num = (n, d = 1) => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('es-ES', {maximumFractionDigits: d});
+const num = (n, d = 2) => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('es-ES', {maximumFractionDigits: d});
 const pSec = p => { if (!p) return null; const m = String(p).trim().match(/^(\d{1,2}):(\d{2})$/); return m ? (+m[1]) * 60 + (+m[2]) : null; };
 const fPace = s => s == null ? '—' : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 const tSec = t => { if (!t) return null; const p = String(t).trim().split(':').map(Number); if (p.some(isNaN)) return null; return p.length === 3 ? p[0]*3600+p[1]*60+p[2] : p.length === 2 ? p[0]*60+p[1] : null; };
@@ -796,13 +796,13 @@ function physHTML() {
   }
   const lw = [...ser].reverse().find(x => x.weight);
   if (g.weight && lw) goalLine += `<div class="mono muted">Peso objetivo ${num(g.weight)} kg · ahora ${num(lw.weight)} kg (${lw.weight - g.weight > 0 ? 'faltan ' + num(lw.weight - g.weight) : 'objetivo alcanzado'}).</div>`;
-  const inputs = [['b-weight','Peso (kg)','0.1'],['b-fat','% grasa','0.1'],['b-muscle','Músculo (kg)','0.1'],['b-water','% agua','0.1'],['b-visc','Grasa visceral','1'],['b-bone','Masa ósea (kg)','0.1'],['b-bmr','Metab. basal (kcal)','1'],['b-waist','Cintura (cm)','0.5']];
+  const inputs = [['b-weight','Peso (kg)','any'],['b-fat','% grasa','any'],['b-muscle','Músculo (kg)','any'],['b-water','% agua','any'],['b-visc','Grasa visceral','any'],['b-bone','Masa ósea (kg)','any'],['b-bmr','Metab. basal (kcal)','any'],['b-waist','Cintura (cm)','any']];
   return `<div class="stack"><h3>Físico · verano</h3>
     <div class="card stack">
       ${ser.length ? `<div class="mgrid">${cards}</div>` : '<div class="muted" style="font-size:14px">Anota aquí lo que te mide la báscula. Con un control semanal, el mismo día y en ayunas, verás la tendencia de grasa y músculo.</div>'}
       ${line}${goalLine}
-      <form class="fields" id="bodyForm"><label class="f">Fecha<input type="date" id="b-date" value="${TODAY}"></label>${inputs.map(([id, l, st]) => `<label class="f">${l}<input type="number" step="${st}" inputmode="decimal" id="${id}"></label>`).join('')}<button class="btn" type="submit" style="align-self:end">Guardar control</button></form>
-      <form class="fields" id="goalForm"><label class="f">Objetivo % grasa<input type="number" step="0.1" inputmode="decimal" id="g-fat" value="${g.fat ?? ''}"></label><label class="f">Objetivo peso (kg)<input type="number" step="0.1" inputmode="decimal" id="g-weight" value="${g.weight ?? ''}"></label><button class="btn ghost" type="submit" style="align-self:end">Guardar objetivo</button></form>
+      <form class="fields" id="bodyForm"><label class="f">Fecha<input type="date" id="b-date" value="${TODAY}"></label>${inputs.map(([id, l]) => `<label class="f">${l}<input inputmode="decimal" autocomplete="off" id="${id}"></label>`).join('')}<button class="btn" type="submit" style="align-self:end">Guardar control</button></form>
+      <form class="fields" id="goalForm"><label class="f">Objetivo % grasa<input inputmode="decimal" autocomplete="off" id="g-fat" value="${fmtNum(g.fat)}"></label><label class="f">Objetivo peso (kg)<input inputmode="decimal" autocomplete="off" id="g-weight" value="${fmtNum(g.weight)}"></label><button class="btn ghost" type="submit" style="align-self:end">Guardar objetivo</button></form>
     </div></div>`;
 }
 
@@ -1262,7 +1262,12 @@ function viewAjustes() {
 function openSheet(key) { S.open = key; S.confirmDel = false; renderSheet(); $('#sheet').hidden = false; document.body.style.overflow = 'hidden'; }
 function closeSheet() { S.open = null; $('#sheet').hidden = true; document.body.style.overflow = ''; }
 function fld(id, label, val, attrs = '') { return `<label class="f">${label}<input id="${id}" value="${esc(val ?? '')}" ${attrs}></label>`; }
-function numF(id, label, val, step = 'any') { return fld(id, label, val, `type="number" step="${step}" inputmode="decimal"`); }
+const fmtMin = m => { if (m == null || m === '' || isNaN(m)) return ''; const t = Math.round(+m * 60); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+const parseMin = x => { x = String(x).trim().replace(',', '.'); if (!x) return null; const m = x.match(/^(\d+):([0-5]?\d)(?::([0-5]?\d))?$/); if (m) return m[3] != null ? (+m[1] * 60 + +m[2]) + +m[3] / 60 : +m[1] + +m[2] / 60; const n = Number(x); return isNaN(n) ? NaN : n; };
+const minF = (id, label, val, ph = '31:50', suf = ' (mm:ss)') => fld(id, label + suf, fmtMin(val), `placeholder="${ph}" autocomplete="off" autocapitalize="off" spellcheck="false"`);
+const fmtNum = v => v == null || v === '' || isNaN(v) ? '' : String(Math.round(+v * 100) / 100).replace('.', ',');
+const parseNum = x => { x = String(x ?? '').trim().replace(/\s/g, '').replace(',', '.'); if (!x) return null; if (!/^-?\d+(\.\d+)?$/.test(x)) return NaN; return Math.round(Number(x) * 100) / 100; };
+function numF(id, label, val) { return fld(id, label, fmtNum(val), 'inputmode="decimal" autocomplete="off"'); }
 function renderSheet() {
   const s = BYKEY[S.open]; if (!s) return;
   const PRK = new Set(records().filter(r => r.key === s.key).map(r => r.name));
@@ -1274,9 +1279,9 @@ function renderSheet() {
     ${stepsHTML(s, pc)}
     <dl class="spec"><dt>Sensación</dt><dd>${esc(s.intensity)}</dd>${s.fuel ? `<dt>Nutrición</dt><dd>${esc(s.fuel)}</dd>` : ''}</dl>` : `<div class="muted" style="font-size:14px">${esc(s.note)}</div>`;
   const runF = s.kind === 'run' ? `<fieldset><legend>Carrera</legend><div class="fields">
-      ${numF('f-km', 'Km', l.actualKm)}${numF('f-min', 'Minutos totales', l.actualMin)}${numF('f-run', 'Min corriendo', l.actualRunMin)}${numF('f-walk', 'Min andando', l.actualWalkMin)}
-      ${fld('f-pace', 'Ritmo medio (m:ss)', l.avgPace, 'placeholder="6:45" inputmode="numeric"')}${numF('f-hr', 'FC media', l.hr, '1')}
-      ${s.type === 'R' ? fld('f-race', 'Tiempo oficial (mm:ss)', l.raceTime, 'placeholder="52:30"') : ''}
+      ${numF('f-km', 'Km', l.actualKm)}${minF('f-min', 'Minutos totales', l.actualMin)}${minF('f-run', 'Min corriendo', l.actualRunMin)}${minF('f-walk', 'Min andando', l.actualWalkMin)}
+      ${fld('f-pace', 'Ritmo medio (m:ss)', l.avgPace, 'placeholder="6:45" autocomplete="off"')}${numF('f-hr', 'FC media', l.hr)}
+      ${s.type === 'R' ? fld('f-race', 'Tiempo oficial (mm:ss o h:mm:ss)', l.raceTime, 'placeholder="52:30" autocomplete="off"') : ''}
     </div></fieldset>` : '';
   const gymF = s.kind === 'gym' ? `<fieldset><legend>Ejercicios</legend>
       ${s.items.map((it, i) => { const e = (l.exercises || {})[it.name] || {}, last = lastFor(it.name, s.key), sg = suggest(it, last); return `<div class="ex">
@@ -1287,7 +1292,7 @@ function renderSheet() {
         <div class="in">${numF('e' + i + 'w', 'Kg', e.weight)}${fld('e' + i + 'r', 'Reps (8/8/6)', e.reps, 'inputmode="numeric"')}${numF('e' + i + 'i', 'RIR', e.rir)}
           <label class="chk"><input type="checkbox" id="e${i}d" ${e.done || (!l.result && false) ? 'checked' : ''}> Hecho</label></div>
       </div>`; }).join('')}
-      <div class="fields">${numF('f-smin', 'Min de fuerza', l.strengthMin)}${numF('f-cmin', 'Cardio extra (min)', l.cardioMin)}${fld('f-ctype', 'Tipo de cardio', l.cardioType, 'placeholder="Bicicleta"')}${numF('f-chr', 'FC del cardio', l.cardioHr, '1')}</div>
+      <div class="fields">${minF('f-smin', 'Min de fuerza', l.strengthMin)}${minF('f-cmin', 'Cardio extra', l.cardioMin)}${fld('f-ctype', 'Tipo de cardio', l.cardioType, 'placeholder="Bicicleta"')}${numF('f-chr', 'FC del cardio', l.cardioHr)}</div>
     </fieldset>` : '';
   const moved = S.settings.moves && S.settings.moves[s.key];
   $('#panel').innerHTML = `
@@ -1299,7 +1304,7 @@ function renderSheet() {
       ${runF}${gymF}
       <fieldset><legend>Cómo fue</legend><div class="fields">
         ${numF('f-rpe', 'RPE (0–10)', l.rpe)}${numF('f-pain', 'Dolor (0–10)', l.pain)}${numF('f-painN', 'Dolor al día siguiente', l.painNext)}${numF('f-rec', 'Recuperación (1–5)', l.recovery)}
-        ${numF('f-sleep', 'Sueño (h)', l.sleep)}${numF('f-hrv', 'VFC (ms)', l.hrv)}${numF('f-rhr', 'FC reposo', l.restingHr, '1')}
+        ${minF('f-sleep', 'Sueño', l.sleep, '7:30', ' (h:mm)')}${numF('f-hrv', 'VFC (ms)', l.hrv)}${numF('f-rhr', 'FC reposo', l.restingHr)}
       </div><textarea id="f-notes" placeholder="Notas: molestias, sensaciones, cambios">${esc(l.notes || '')}</textarea></fieldset>
       <div class="row"><button class="btn primary" type="submit">Guardar</button>${l.result ? `<button class="btn danger" type="button" data-del>Borrar registro</button>` : ''}</div>
       ${S.confirmDel ? `<div class="confirm"><span>¿Borrar el registro de esta sesión?</span><button class="btn danger" type="button" data-del-yes>Sí, borrar</button><button class="btn" type="button" data-del-no>Cancelar</button></div>` : ''}
@@ -1312,20 +1317,24 @@ function renderSheet() {
 function readLog(s) {
   const l = clone(S.logs[s.key]);
   const v = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
-  const setN = (k, id) => { const x = v(id); if (x === '') delete l[k]; else l[k] = Number(x.replace(',', '.')); };
+  let bad = null;
+  const setN = (k, id) => { const x = v(id); if (x === '') { delete l[k]; return; } const n = parseNum(x); if (isNaN(n)) { bad = bad || id; return; } l[k] = n; };
+  const setM = (k, id) => { const x = v(id); if (x === '') { delete l[k]; return true; } const n = parseMin(x); if (isNaN(n)) return false; l[k] = Math.round(n * 10000) / 10000; return true; };
   const setT = (k, id) => { const x = v(id); if (x === '') delete l[k]; else l[k] = x; };
   const r = document.querySelector('input[name="res"]:checked'); l.result = r ? r.value : 'success';
-  if (s.kind === 'run') { setN('actualKm','f-km'); setN('actualMin','f-min'); setN('actualRunMin','f-run'); setN('actualWalkMin','f-walk'); setT('avgPace','f-pace'); setN('hr','f-hr'); if (s.type === 'R') setT('raceTime','f-race'); }
+  if (s.kind === 'run') { setN('actualKm','f-km'); for (const [k, id] of [['actualMin','f-min'],['actualRunMin','f-run'],['actualWalkMin','f-walk']]) if (!setM(k, id)) { toast('Escribe el tiempo como mm:ss, por ejemplo 31:50.'); return null; } setT('avgPace','f-pace'); setN('hr','f-hr'); if (s.type === 'R') setT('raceTime','f-race'); }
   if (s.kind === 'gym') {
     const ex = l.exercises || {};
     s.items.forEach((it, i) => {
       const w = v('e' + i + 'w'), rp = v('e' + i + 'r'), ri = v('e' + i + 'i'), d = document.getElementById('e' + i + 'd').checked;
-      const o = {done: d || !!rp}; if (w !== '') o.weight = Number(w.replace(',', '.')); if (rp) o.reps = rp; if (ri !== '') o.rir = Number(ri.replace(',', '.'));
+      const o = {done: d || !!rp}; const wn = parseNum(w), rn = parseNum(ri); if (isNaN(wn) || isNaN(rn)) bad = bad || 'e' + i + 'w'; if (wn != null && !isNaN(wn)) o.weight = wn; if (rp) o.reps = rp; if (rn != null && !isNaN(rn)) o.rir = rn;
       ex[it.name] = o;
     });
-    l.exercises = ex; setN('strengthMin','f-smin'); setN('cardioMin','f-cmin'); setT('cardioType','f-ctype'); setN('cardioHr','f-chr');
+    l.exercises = ex; for (const [k, id] of [['strengthMin','f-smin'],['cardioMin','f-cmin']]) if (!setM(k, id)) { toast('Escribe el tiempo como mm:ss, por ejemplo 26:30.'); return null; } setT('cardioType','f-ctype'); setN('cardioHr','f-chr');
   }
-  setN('rpe','f-rpe'); setN('pain','f-pain'); setN('painNext','f-painN'); setN('recovery','f-rec'); setN('sleep','f-sleep'); setN('hrv','f-hrv'); setN('restingHr','f-rhr'); setT('notes','f-notes');
+  setN('rpe','f-rpe'); setN('pain','f-pain'); setN('painNext','f-painN'); setN('recovery','f-rec'); if (!setM('sleep','f-sleep')) { toast('Escribe el sueño como h:mm, por ejemplo 7:30.'); return null; } setN('hrv','f-hrv'); setN('restingHr','f-rhr'); setT('notes','f-notes');
+  if (bad) { toast('Revisa los números: usa coma o punto y hasta dos decimales, por ejemplo 52,5.'); const el = document.getElementById(bad); if (el) el.focus(); return null; }
+  if (l.raceTime && !tSec(l.raceTime)) { toast('Escribe el tiempo oficial como mm:ss o h:mm:ss.'); return null; }
   if (l.avgPace && !pSec(l.avgPace)) { toast('Escribe el ritmo como m:ss, por ejemplo 6:45.'); return null; }
   l.updatedAt = new Date().toISOString();
   return l;
@@ -1400,7 +1409,8 @@ document.addEventListener('submit', async e => {
     S.settings.tenK = ten; S.settings.ePace = ep; await saveSettings(); toast('Ritmos guardados');
   }
   if (e.target.id === 'bodyForm') {
-    const d = $('#b-date').value, val = id => { const x = $('#' + id).value.trim().replace(',', '.'); return x === '' ? null : +x; };
+    const d = $('#b-date').value, val = id => parseNum($('#' + id).value);
+    if (['b-weight','b-fat','b-muscle','b-water','b-visc','b-bone','b-bmr','b-waist'].some(id => isNaN(val(id)))) return toast('Revisa los números: usa coma o punto y hasta dos decimales, por ejemplo 17,85.');
     const w = val('b-weight'), c = val('b-waist');
     const comp = {fat: val('b-fat'), muscle: val('b-muscle'), water: val('b-water'), visceral: val('b-visc'), bone: val('b-bone'), bmr: val('b-bmr')};
     const hasComp = Object.values(comp).some(v => v != null);
@@ -1414,8 +1424,9 @@ document.addEventListener('submit', async e => {
     if (ok) toast('Control guardado');
   }
   if (e.target.id === 'goalForm') {
-    const f = $('#g-fat').value.trim().replace(',', '.'), w = $('#g-weight').value.trim().replace(',', '.');
-    S.settings.goal = {}; if (f) S.settings.goal.fat = +f; if (w) S.settings.goal.weight = +w;
+    const f = parseNum($('#g-fat').value), w = parseNum($('#g-weight').value);
+    if (isNaN(f) || isNaN(w)) return toast('Revisa los números: hasta dos decimales, por ejemplo 13,5.');
+    S.settings.goal = {}; if (f != null) S.settings.goal.fat = f; if (w != null) S.settings.goal.weight = w;
     await saveSettings(); toast('Objetivo guardado');
   }
 });
