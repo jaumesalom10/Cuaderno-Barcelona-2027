@@ -230,6 +230,17 @@ ul.read{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
 .steps .am{color:var(--muted)} .steps .pc{font-weight:600;color:var(--c,var(--accent));font-size:14px;margin-top:2px}
 .steps .nt{font-size:13.5px;color:var(--muted);margin-top:3px}
 .steps li.t-E{--c:var(--tE)}.steps li.t-T{--c:var(--tT)}.steps li.t-M{--c:var(--tM)}.steps li.t-H{--c:var(--tH)}.steps li.t-R{--c:var(--tR)}.steps li.t-W{--c:var(--tG)}
+.restrow{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;flex-wrap:wrap}
+.btn.sm{padding:6px 10px;font-size:13px}
+.restbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:25;width:min(560px,calc(100% - 20px));background:var(--ink);color:var(--bg);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.25);overflow:hidden}
+.restbar[hidden]{display:none}
+.restbar .rp{height:4px;background:color-mix(in srgb,var(--bg) 20%,transparent)}.restbar .rp i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s linear}
+.restbar .rrow{display:flex;align-items:center;gap:8px;padding:8px 10px 8px 14px}
+.restbar .rt{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1;min-width:72px}
+.restbar .rn{flex:1;font-size:13px;opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.restbar .btn.ghost{color:var(--bg);padding-inline:6px}.restbar .btn:not(.ghost){background:transparent;color:var(--bg);border-color:color-mix(in srgb,var(--bg) 35%,transparent)}
+.restbar.done{background:var(--ok)}.restbar.done .rp i{background:var(--bg)}
+body.resting .panel{padding-bottom:96px}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
 @media (max-width:460px){
   .bib .num{font-size:52px}
@@ -260,6 +271,7 @@ ul.read{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
   </div>
 </header>
 <main class="wrap" id="view" aria-live="polite"></main>
+<div class="restbar" id="restbar" hidden role="timer" aria-live="polite"><div class="rp"><i></i></div><div class="rrow"><span class="rt">0:00</span><span class="rn"></span><button class="btn ghost" type="button" data-rest-add="-15">−15″</button><button class="btn ghost" type="button" data-rest-add="15">+15″</button><button class="btn" type="button" data-rest-stop>Parar</button></div></div>
 <div class="sheet" id="sheet" hidden><div class="panel" id="panel" role="dialog" aria-modal="true"></div></div>
 <div class="toast" id="toast" hidden></div>
 
@@ -1029,6 +1041,30 @@ function stepsHTML(s, pc) {
     <ol class="steps">${st.map(x => `<li class="t-${x.k}"><span class="at">min ${x.from}–${x.to}</span><div><b>${esc(x.title)}</b><span class="am"> · ${esc(x.amount)}</span><div class="pc">${esc(x.pace)}</div>${x.note ? `<div class="nt">${esc(x.note)}</div>` : ''}</div></li>`).join('')}</ol></div>`;
 }
 
+/* ---------- Descanso entre series ---------- */
+const restSec = r => { const m = String(r || '').match(/(\d+)(?:\s*[-–]\s*(\d+))?\s*(s|min)/); if (!m) return null; const k = m[3] === 'min' ? 60 : 1; return [+m[1] * k, (m[2] ? +m[2] : +m[1]) * k]; };
+const fSec = t => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, '0')}`;
+const fRest = r => { const x = restSec(r); if (!x) return ''; return x[0] === x[1] ? fSec(x[0]) : `${fSec(x[0])}–${fSec(x[1])}`; };
+const RT = {end: 0, total: 0, name: '', iv: null, ac: null, lock: null};
+function restStart(sec, name) {
+  RT.total = sec; RT.end = Date.now() + sec * 1000; RT.name = name;
+  try { RT.ac = RT.ac || new (window.AudioContext || window.webkitAudioContext)(); RT.ac.resume && RT.ac.resume(); } catch (e) {}
+  try { if (navigator.wakeLock && !RT.lock) navigator.wakeLock.request('screen').then(l => RT.lock = l).catch(() => {}); } catch (e) {}
+  clearInterval(RT.iv); RT.iv = setInterval(restTick, 250); document.body.classList.add('resting'); $('#restbar').hidden = false; restTick();
+}
+function restStop() { clearInterval(RT.iv); RT.iv = null; RT.end = 0; $('#restbar').hidden = true; document.body.classList.remove('resting'); try { RT.lock && RT.lock.release(); } catch (e) {} RT.lock = null; }
+function beep() {
+  try { const ac = RT.ac; if (!ac) return; [0, 0.28, 0.56].forEach(t => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = 880; o.connect(g); g.connect(ac.destination); g.gain.setValueAtTime(0.25, ac.currentTime + t); g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + t + 0.22); o.start(ac.currentTime + t); o.stop(ac.currentTime + t + 0.24); }); } catch (e) {}
+}
+function restTick() {
+  const left = Math.max(0, Math.ceil((RT.end - Date.now()) / 1000)), bar = $('#restbar');
+  bar.querySelector('.rt').textContent = fSec(left);
+  bar.querySelector('.rn').textContent = left ? RT.name : '¡Siguiente serie!';
+  bar.querySelector('.rp i').style.width = (RT.total ? (1 - left / RT.total) * 100 : 100) + '%';
+  bar.classList.toggle('done', !left);
+  if (!left) { clearInterval(RT.iv); RT.iv = null; beep(); try { navigator.vibrate && navigator.vibrate([300, 120, 300]); } catch (e) {} setTimeout(() => { if (!RT.iv) restStop(); }, 6000); }
+}
+
 /* ---------- Componentes ---------- */
 const chip = t => `<span class="chip t-${t}">${t === 'G' ? 'GYM' : t}</span>`;
 const sessChip = s => s.kind === 'gym' ? `<span class="chip t-G">${s.code}</span>` : chip(s.type);
@@ -1128,8 +1164,8 @@ function sessionCard(s, pc, kicker) {
     : `
       <div class="row" style="align-items:baseline;gap:18px"><span class="big">${s.items.length}<small>ejercicios</small></span><span class="muted">≈ ${s.estMin}′ · ${esc(s.dose)}</span></div>
       <div class="muted" style="font-size:14px">${esc(s.note)}</div>
-      <div class="tbl-wrap"><table><thead><tr><th>Ejercicio</th><th class="n">Series</th><th>Reps · RIR</th><th>Última vez</th></tr></thead><tbody>
-      ${s.items.map(it => { const last = lastFor(it.name, s.key), sg = suggest(it, last); return `<tr><td>${esc(it.name)}</td><td class="n">${it.sets}</td><td class="mono">${esc(it.reps)} · ${esc(it.rir)}</td><td class="mono">${last ? `${last.weight ? num(last.weight) + ' kg · ' : ''}${esc(last.reps || '')}${sg ? `<br><span style="color:${sg.t === 'up' ? 'var(--ok)' : 'var(--muted)'}">${esc(sg.msg)}</span>` : ''}` : '—'}</td></tr>`; }).join('')}
+      <div class="tbl-wrap"><table><thead><tr><th>Ejercicio</th><th class="n">Series</th><th>Reps · RIR</th><th>Desc.</th><th>Última vez</th></tr></thead><tbody>
+      ${s.items.map(it => { const last = lastFor(it.name, s.key), sg = suggest(it, last); return `<tr><td>${esc(it.name)}</td><td class="n">${it.sets}</td><td class="mono">${esc(it.reps)} · ${esc(it.rir)}</td><td class="mono">${fRest(it.rest) || '—'}</td><td class="mono">${last ? `${last.weight ? num(last.weight) + ' kg · ' : ''}${esc(last.reps || '')}${sg ? `<br><span style="color:${sg.t === 'up' ? 'var(--ok)' : 'var(--muted)'}">${esc(sg.msg)}</span>` : ''}` : '—'}</td></tr>`; }).join('')}
       </tbody></table></div>`;
   return `<article class="card session">
     <div class="head">${sessChip(s)}<div class="t"><div class="kicker">${esc(kicker)} · ${s.kind === 'gym' ? 'Gimnasio' : TYPE_NAME[s.type]}</div><div class="title">${s.kind === 'gym' ? s.code + ' · ' : ''}${esc(s.title)}</div></div></div>
@@ -1294,6 +1330,7 @@ function renderSheet() {
   const gymF = s.kind === 'gym' ? `<fieldset><legend>Ejercicios</legend>
       ${s.items.map((it, i) => { const e = (l.exercises || {})[it.name] || {}, last = lastFor(it.name, s.key), sg = suggest(it, last); return `<div class="ex">
         <div class="nm"><b>${esc(it.name)}</b>${PRK.has(it.name) ? '<span class="pr">Récord</span>' : ''}<span class="rx">${it.sets} × ${esc(it.reps)} · RIR ${esc(it.rir)}</span></div>
+        ${restSec(it.rest) ? `<div class="restrow"><span class="muted">Descanso entre series: <b>${fRest(it.rest)}</b></span><button type="button" class="btn sm" data-rest="${restSec(it.rest)[0]}" data-rest-name="${esc(it.name)}">⏱ Iniciar descanso</button></div>` : ''}
         ${last ? `<div class="last">Última vez (${fDate(last.date)}): ${last.weight ? num(last.weight) + ' kg · ' : ''}${esc(last.reps || '—')}${last.rir != null ? ' · RIR ' + last.rir : ''}</div>` : ''}
         ${sg ? `<div class="sug ${sg.t}">${esc(sg.msg)}</div>` : ''}
         ${it.note || it.alt ? `<div class="note">${esc(it.note)}${it.alt ? ` Alternativa: ${esc(it.alt)}.` : ''}</div>` : ''}
@@ -1362,8 +1399,11 @@ function render() {
 }
 function setTab(t) { S.tab = t; try { localStorage.setItem(LOCAL_KEY + '-tab', t); } catch (e) {} render(); window.scrollTo(0, 0); }
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-tab],[data-open],[data-go],[data-wk],[data-close],[data-del],[data-del-yes],[data-del-no],[data-move],[data-unmove],[data-logout],[data-sum-nav],[data-sum-copy],#exportBtn');
+  const t = e.target.closest('[data-tab],[data-open],[data-go],[data-wk],[data-close],[data-del],[data-del-yes],[data-del-no],[data-move],[data-unmove],[data-logout],[data-sum-nav],[data-sum-copy],[data-rest],[data-rest-add],[data-rest-stop],#exportBtn');
   if (!t) { if (e.target.id === 'sheet') closeSheet(); return; }
+  if (t.dataset.rest) return restStart(+t.dataset.rest, t.dataset.restName || '');
+  if (t.dataset.restAdd) { if (RT.end) { RT.end = Math.max(Date.now(), RT.end + +t.dataset.restAdd * 1000); RT.total = Math.max(RT.total + +t.dataset.restAdd, 1); if (!RT.iv) RT.iv = setInterval(restTick, 250); restTick(); } return; }
+  if (t.hasAttribute('data-rest-stop')) return restStop();
   if (t.hasAttribute('data-sum-nav')) { const n = +t.dataset.sumNav, sm = S.sum; if (sm.mode === 'w') sm.w = Math.min(26, Math.max(1, sm.w + n)); else sm.m = Math.min(SUM_MONTHS.length - 1, Math.max(0, sm.m + n)); return render(); }
   if (t.hasAttribute('data-sum-copy')) { const rg = sumRange(), txt = sumText(periodStats(rg.from, rg.to), rg.label); try { await navigator.clipboard.writeText(txt); toast('Resumen copiado'); } catch (err) { toast('No se ha podido copiar. Prueba desde otro navegador.'); } return; }
   if (t.hasAttribute('data-logout')) { await SB.auth.signOut(); toast('Sesión cerrada'); return; }
