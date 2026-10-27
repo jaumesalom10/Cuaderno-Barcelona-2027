@@ -241,6 +241,13 @@ ul.read{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
 .restbar .btn.ghost{color:var(--bg);padding-inline:6px}.restbar .btn:not(.ghost){background:transparent;color:var(--bg);border-color:color-mix(in srgb,var(--bg) 35%,transparent)}
 .restbar.done{background:var(--ok)}.restbar.done .rp i{background:var(--bg)}
 body.resting .panel{padding-bottom:96px}
+.qgrid{display:flex;flex-direction:column;gap:6px}
+.qrow{display:grid;grid-template-columns:28px repeat(4,minmax(0,1fr));gap:6px;align-items:center}
+.qrow.h{grid-template-columns:28px repeat(3,minmax(0,1fr))}
+.qrow input{width:100%;padding:7px 6px;font-size:15px}
+.qrow.qh span{font-family:var(--f-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase}
+.qsum{font-size:13.5px;color:var(--muted);background:var(--sunk);border-radius:8px;padding:8px 10px}
+.qsum .good{color:var(--ok)} .qsum .bad{color:var(--warn)}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
 @media (max-width:460px){
   .bib .num{font-size:52px}
@@ -1065,6 +1072,69 @@ function restTick() {
   if (!left) { clearInterval(RT.iv); RT.iv = null; beep(); try { navigator.vibrate && navigator.vibrate([300, 120, 300]); } catch (e) {} setTimeout(() => { if (!RT.iv) restStop(); }, 6000); }
 }
 
+/* ---------- Registro de series en las sesiones de calidad ---------- */
+function qualSpec(s) {
+  if (s.kind !== 'run' || s.min) return null;
+  const main = s.main || '';
+  let m = main.match(/^(\d+)′ E, después (\d+) × (\d+)′ a M con (\d+)′ E/);
+  if (m) return {kind:'blocks', n:+m[2], label:`${m[3]}′ a M`, plan:+m[3], rec:+m[4], zone:'M'};
+  m = main.match(/(\d+)\s*×\s*(\d+)′\s*a\s*(T|M|RPE 6)\s*con\s*(\d+)′\s*E/);
+  if (m) return {kind:'blocks', n:+m[1], label:`${m[2]}′ a ${m[3]}`, plan:+m[2], rec:+m[4], zone:m[3] === 'RPE 6' ? 'H' : m[3]};
+  if (/seguidos a M en la parte central/.test(main)) return {kind:'blocks', n:1, label:'45–60′ a M', plan:52, rec:0, zone:'M'};
+  m = main.match(/(\d+)\s*×\s*(\d+)″\s*en cuesta/);
+  if (m) return {kind:'hills', n:+m[1], label:`${m[2]}″ en cuesta`, plan:+m[2] / 60, rec:1.5, zone:'H'};
+  if (/progresivos/.test(main) || /progresivos/.test(s.title)) return {kind:'prog', n:6};
+  return null;
+}
+function qualHTML(s, l) {
+  const q = qualSpec(s); if (!q) return '';
+  if (q.kind === 'prog') return `<fieldset><legend>Progresivos</legend><div class="fields">${numF('q-prog', 'Progresivos hechos', l.progCount)}${numF('q-proghr', 'FC máx. en ellos', l.progHr)}</div></fieldset>`;
+  const reps = l.reps || [], rows = Math.max(q.n, reps.length), hills = q.kind === 'hills';
+  const ph = hills ? fSec(Math.round(q.plan * 60)) : fSec(q.plan * 60);
+  const head = hills ? '<span></span><span>Tiempo</span><span>FC máx.</span><span>RPE</span>' : '<span></span><span>Tiempo</span><span>Ritmo</span><span>FC media</span><span>FC máx.</span>';
+  const row = i => { const r = reps[i] || {}; const inp = (k, val, cls, phd) => `<input id="q${i}${k}" value="${esc(val ?? '')}" ${cls ? `class="${cls}"` : ''} placeholder="${phd || ''}" inputmode="decimal" autocomplete="off" aria-label="Serie ${i + 1} ${k}">`;
+    return `<div class="qrow ${hills ? 'h' : ''}"><span class="mono">S${i + 1}</span>${inp('t', r.t != null ? fmtMin(r.t) : '', 'tm', ph)}${hills ? inp('x', fmtNum(r.hrMax), '', '') + inp('r', fmtNum(r.rpe), '', '') : inp('p', r.pace, 'tm', '') + inp('h', fmtNum(r.hr), '', '') + inp('x', fmtNum(r.hrMax), '', '')}</div>`; };
+  const sum = repSummary(s, l);
+  return `<fieldset><legend>${hills ? 'Cuestas' : 'Series'} · ${q.n} × ${esc(q.label)}</legend>
+    <div class="qgrid"><div class="qrow ${hills ? 'h' : ''} qh">${head}</div>${[...Array(rows)].map((_, i) => row(i)).join('')}</div>
+    <div class="row"><button type="button" class="btn sm ghost" data-qadd>+ Añadir serie</button><span class="muted" style="font-size:12px">Deja en blanco las que no hiciste.</span></div>
+    <div class="fields">${minF('q-rec', hills ? 'Recuperación (bajada)' : 'Recuperación entre series', l.recMin, q.rec ? fSec(q.rec * 60) : '')}${numF('q-rechr', 'FC al final de la recup.', l.recHr)}</div>
+    ${sum ? `<div class="qsum">${sum}</div>` : ''}
+  </fieldset>`;
+}
+function repSummary(s, l) {
+  const reps = (l.reps || []).filter(r => r.t || r.pace || r.hr || r.hrMax); if (!reps.length) return '';
+  const pcs = reps.map(r => pSec(r.pace)).filter(Boolean), hrs = reps.map(r => +r.hr).filter(Boolean), mx = reps.map(r => +r.hrMax).filter(Boolean);
+  const avg = a => a.reduce((x, y) => x + y, 0) / a.length, pc = paces(), q = qualSpec(s);
+  const tgt = q && q.zone === 'T' && pc.T ? pc.T : q && q.zone === 'M' ? pc.M : null;
+  let out = `${reps.length} series`;
+  if (pcs.length) { out += ` · ritmo medio ${fPace(avg(pcs))}/km`; if (pcs.length > 1) out += ` (${fPace(pcs[0])} → ${fPace(pcs[pcs.length - 1])})`; }
+  if (hrs.length) out += ` · FC media ${num(avg(hrs), 0)}`;
+  if (mx.length) out += ` · FC máx. ${Math.max(...mx)}`;
+  if (tgt && pcs.length) { const a = avg(pcs); out += a < tgt[0] - 3 ? ` · <b class="bad">más rápido que el objetivo (${fPace(tgt[0])}–${fPace(tgt[1])})</b>` : a > tgt[1] + 3 ? ` · <b>más lento que el objetivo (${fPace(tgt[0])}–${fPace(tgt[1])})</b>` : ` · <b class="good">en el objetivo</b>`; }
+  if (pcs.length > 1 && pcs[pcs.length - 1] < pcs[0] - 8) out += ' · el último fue bastante más rápido que el primero: salida conservadora o te has picado';
+  return out;
+}
+function readQual(s, l) {
+  const q = qualSpec(s); if (!q) return true;
+  const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  if (q.kind === 'prog') { for (const [k, id] of [['progCount','q-prog'],['progHr','q-proghr']]) { const n = parseNum(val(id)); if (isNaN(n)) return 'Revisa los progresivos.'; if (n == null) delete l[k]; else l[k] = n; } return true; }
+  const reps = [];
+  for (let i = 0; document.getElementById('q' + i + 't'); i++) {
+    const t = parseMin(val('q' + i + 't')), p = normTime(val('q' + i + 'p')), h = parseNum(val('q' + i + 'h')), x = parseNum(val('q' + i + 'x')), r = parseNum(val('q' + i + 'r'));
+    if (isNaN(t)) return `Serie ${i + 1}: el tiempo va como mm:ss.`; if (p == null) return `Serie ${i + 1}: el ritmo va como m:ss.`;
+    if ([h, x, r].some(v => v != null && isNaN(v))) return `Serie ${i + 1}: revisa la FC o el RPE.`;
+    const o = {}; if (t != null) o.t = Math.round(t * 10000) / 10000; if (p) o.pace = p; if (h != null) o.hr = h; if (x != null) o.hrMax = x; if (r != null) o.rpe = r;
+    if (Object.keys(o).length) reps.push(o);
+  }
+  if (reps.length) l.reps = reps; else delete l.reps;
+  const rec = parseMin(val('q-rec')), rh = parseNum(val('q-rechr'));
+  if (isNaN(rec)) return 'La recuperación va como mm:ss.'; if (rh != null && isNaN(rh)) return 'Revisa la FC de la recuperación.';
+  if (rec != null) l.recMin = Math.round(rec * 10000) / 10000; else delete l.recMin;
+  if (rh != null) l.recHr = rh; else delete l.recHr;
+  return true;
+}
+
 /* ---------- Componentes ---------- */
 const chip = t => `<span class="chip t-${t}">${t === 'G' ? 'GYM' : t}</span>`;
 const sessChip = s => s.kind === 'gym' ? `<span class="chip t-G">${s.code}</span>` : chip(s.type);
@@ -1323,10 +1393,10 @@ function renderSheet() {
     ${stepsHTML(s, pc)}
     <dl class="spec"><dt>Sensación</dt><dd>${esc(s.intensity)}</dd>${s.fuel ? `<dt>Nutrición</dt><dd>${esc(s.fuel)}</dd>` : ''}</dl>` : `<div class="muted" style="font-size:14px">${esc(s.note)}</div>`;
   const runF = s.kind === 'run' ? `<fieldset><legend>Carrera</legend><div class="fields">
-      ${numF('f-km', 'Km', l.actualKm)}${minF('f-min', 'Minutos totales', l.actualMin)}${minF('f-run', 'Min corriendo', l.actualRunMin)}${minF('f-walk', 'Min andando', l.actualWalkMin)}
+      ${numF('f-km', 'Km', l.actualKm)}${minF('f-min', 'Tiempo total', l.actualMin)}${s.min || l.actualWalkMin ? minF('f-run', 'Tiempo corriendo', l.actualRunMin) + minF('f-walk', 'Tiempo andando', l.actualWalkMin) : ''}
       ${fld('f-pace', 'Ritmo medio (m:ss)', l.avgPace, 'class="tm" placeholder="6:45" inputmode="decimal" autocomplete="off"')}${numF('f-hr', 'FC media', l.hr)}
       ${s.type === 'R' ? fld('f-race', 'Tiempo oficial (mm:ss o h:mm:ss)', l.raceTime, 'class="tm" placeholder="52:30" inputmode="decimal" autocomplete="off"') : ''}
-    </div></fieldset>` : '';
+    </div></fieldset>${qualHTML(s, l)}` : '';
   const gymF = s.kind === 'gym' ? `<fieldset><legend>Ejercicios</legend>
       ${s.items.map((it, i) => { const e = (l.exercises || {})[it.name] || {}, last = lastFor(it.name, s.key), sg = suggest(it, last); return `<div class="ex">
         <div class="nm"><b>${esc(it.name)}</b>${PRK.has(it.name) ? '<span class="pr">Récord</span>' : ''}<span class="rx">${it.sets} × ${esc(it.reps)} · RIR ${esc(it.rir)}</span></div>
@@ -1367,7 +1437,7 @@ function readLog(s) {
   const setM = (k, id) => { const x = v(id); if (x === '') { delete l[k]; return true; } const n = parseMin(x); if (isNaN(n)) return false; l[k] = Math.round(n * 10000) / 10000; return true; };
   const setT = (k, id) => { const x = v(id); if (x === '') delete l[k]; else l[k] = x; };
   const r = document.querySelector('input[name="res"]:checked'); l.result = r ? r.value : 'success';
-  if (s.kind === 'run') { setN('actualKm','f-km'); for (const [k, id] of [['actualMin','f-min'],['actualRunMin','f-run'],['actualWalkMin','f-walk']]) if (!setM(k, id)) { toast('Escribe el tiempo como mm:ss, por ejemplo 31:50.'); return null; } { const t = normTime(v('f-pace')); if (t == null) { toast('Escribe el ritmo como m:ss, por ejemplo 6:45 (también vale 6.45).'); return null; } if (t) l.avgPace = t; else delete l.avgPace; } setN('hr','f-hr'); if (s.type === 'R') { const t = normTime(v('f-race')); if (t == null) { toast('Escribe el tiempo oficial como mm:ss o h:mm:ss.'); return null; } if (t) l.raceTime = t; else delete l.raceTime; } }
+  if (s.kind === 'run') { setN('actualKm','f-km'); for (const [k, id] of [['actualMin','f-min'],['actualRunMin','f-run'],['actualWalkMin','f-walk']]) if (document.getElementById(id) && !setM(k, id)) { toast('Escribe el tiempo como mm:ss, por ejemplo 31:50.'); return null; } { const t = normTime(v('f-pace')); if (t == null) { toast('Escribe el ritmo como m:ss, por ejemplo 6:45 (también vale 6.45).'); return null; } if (t) l.avgPace = t; else delete l.avgPace; } setN('hr','f-hr'); { const qr = readQual(s, l); if (qr !== true) { toast(qr); return null; } } if (s.type === 'R') { const t = normTime(v('f-race')); if (t == null) { toast('Escribe el tiempo oficial como mm:ss o h:mm:ss.'); return null; } if (t) l.raceTime = t; else delete l.raceTime; } }
   if (s.kind === 'gym') {
     const ex = l.exercises || {};
     s.items.forEach((it, i) => {
@@ -1399,8 +1469,9 @@ function render() {
 }
 function setTab(t) { S.tab = t; try { localStorage.setItem(LOCAL_KEY + '-tab', t); } catch (e) {} render(); window.scrollTo(0, 0); }
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-tab],[data-open],[data-go],[data-wk],[data-close],[data-del],[data-del-yes],[data-del-no],[data-move],[data-unmove],[data-logout],[data-sum-nav],[data-sum-copy],[data-rest],[data-rest-add],[data-rest-stop],#exportBtn');
+  const t = e.target.closest('[data-tab],[data-open],[data-go],[data-wk],[data-close],[data-del],[data-del-yes],[data-del-no],[data-move],[data-unmove],[data-logout],[data-sum-nav],[data-sum-copy],[data-rest],[data-rest-add],[data-rest-stop],[data-qadd],#exportBtn');
   if (!t) { if (e.target.id === 'sheet') closeSheet(); return; }
+  if (t.hasAttribute('data-qadd')) { const g = t.closest('fieldset').querySelector('.qgrid'), rows = g.querySelectorAll('.qrow:not(.qh)'), last = rows[rows.length - 1], i = rows.length, c = last.cloneNode(true); c.querySelector('span').textContent = 'S' + (i + 1); c.querySelectorAll('input').forEach(inp => { inp.id = inp.id.replace(/^q\d+/, 'q' + i); inp.value = ''; inp.setAttribute('aria-label', inp.getAttribute('aria-label').replace(/Serie \d+/, 'Serie ' + (i + 1))); }); g.appendChild(c); return; }
   if (t.dataset.rest) return restStart(+t.dataset.rest, t.dataset.restName || '');
   if (t.dataset.restAdd) { if (RT.end) { RT.end = Math.max(Date.now(), RT.end + +t.dataset.restAdd * 1000); RT.total = Math.max(RT.total + +t.dataset.restAdd, 1); if (!RT.iv) RT.iv = setInterval(restTick, 250); restTick(); } return; }
   if (t.hasAttribute('data-rest-stop')) return restStop();
