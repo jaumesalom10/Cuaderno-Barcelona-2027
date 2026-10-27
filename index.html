@@ -832,12 +832,13 @@ function marathonHTML(pc) {
   const planSoFar = upTo.reduce((a, s) => a + (s.km || 0), 0), realSoFar = Object.keys(S.logs).filter(k => BYKEY[k] && BYKEY[k].kind === 'run' && S.logs[k].result && S.logs[k].result !== 'missed').reduce((a, k) => a + (+S.logs[k].actualKm || 0), 0);
   const longs = SESSIONS.filter(s => s.kind === 'run' && s.dow === 6 && s.type !== 'R');
   const peak = Math.max(...longs.map(s => s.km || 0));
-  const doneLong = longs.map(s => ({s, l: S.logs[s.key]})).filter(x => x.l && x.l.result && x.l.result !== 'missed' && +x.l.actualKm);
-  const maxLong = doneLong.length ? Math.max(...doneLong.map(x => +x.l.actualKm)) : 0;
+  const runKm = s => { const l = S.logs[s.key]; return l && l.result && l.result !== 'missed' ? +l.actualKm || 0 : 0; };
+  const doneLong = SESSIONS.filter(s => s.kind === 'run' && !(s.type === 'R' && s.km > 40) && runKm(s) > 0).map(s => ({s, km: runKm(s)}));
+  const best = doneLong.reduce((a, x) => !a || x.km > a.km ? x : a, null), maxLong = best ? best.km : 0;
   const rows = [];
   for (let i = Math.max(1, w - 5); i <= w; i++) {
     const wk = WEEKS[i - 1], real = weekReal(wk), ls = wk.sessions.find(s => s.kind === 'run' && s.dow === 6), ll = S.logs[ls.key];
-    const longReal = ll && ll.result && ll.result !== 'missed' ? +ll.actualKm || 0 : null;
+    const wkKm = wk.sessions.filter(s => s.kind === 'run').map(runKm), longReal = wkKm.some(k => k > 0) ? Math.max(...wkKm) : (ll && ll.result ? 0 : null);
     const pct = wk.planKm ? Math.round(real.km / wk.planKm * 100) : null;
     rows.push(`<tr><td>S${i}</td><td class="n">${wk.planKm ? num(wk.planKm) : '≈' + num(wk.estKm, 0)}</td><td class="n">${num(real.km)}</td><td class="n">${pct != null ? pct + ' %' : '—'}</td><td class="n">${ls.km ? num(ls.km) : '—'} / ${longReal != null ? num(longReal) : '—'}</td><td class="n">${real.done}/6</td></tr>`);
   }
@@ -848,8 +849,8 @@ function marathonHTML(pc) {
       <div class="kpi"><span class="v">${num(realSoFar, 0)}<small>/ ${num(planSoFar, 0)} km</small></span><span class="l">acumulado real / plan</span></div>
     </div>
     ${pc.pred ? `<div class="muted" style="font-size:13px">Ritmo M orientativo ${fPace(pc.M[0])}–${fPace(pc.M[1])}/km (${esc(pc.mSrc)}). Se afina con las tiradas con bloques M.</div>` : `<div class="muted" style="font-size:13px">Escribe tu mejor 10K en Ajustes o corre la Cursa Bombers y aparecerá la estimación de tiempo y el ritmo M.</div>`}
-    <div class="stack" style="gap:6px"><div class="row between"><span>Tirada más larga hecha</span><span class="mono">${num(maxLong)} km de ${num(peak)} km (pico S22)</span></div><div class="bar"><i style="width:${Math.min(100, maxLong / peak * 100)}%"></i></div></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Sem.</th><th class="n">Plan km</th><th class="n">Real km</th><th class="n">%</th><th class="n">Larga plan/real</th><th class="n">Sesiones</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>
+    <div class="stack" style="gap:6px"><div class="row between"><span>Tirada más larga hecha${best ? ` <span class="mono muted">(${fDate(effDate(best.s))})</span>` : ''}</span><span class="mono">${num(maxLong)} km de ${num(peak)} km (pico S22)</span></div><div class="bar"><i style="width:${Math.min(100, maxLong / peak * 100)}%"></i></div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Sem.</th><th class="n">Plan km</th><th class="n">Real km</th><th class="n">%</th><th class="n">Larga plan / más larga</th><th class="n">Sesiones</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>
   </div></div>`;
 }
 
